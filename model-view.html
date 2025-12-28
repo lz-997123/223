@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 模型查看器</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 100%);
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 23, 42, 0.95);
+            color: #e2e8f0;
+            padding: 24px 32px;
+            border-radius: 16px;
+            text-align: center;
+            z-index: 100;
+            border: 1px solid #334155;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            min-width: 260px;
+            transition: opacity 0.3s ease;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(59, 130, 246, 0.3);
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(15, 23, 42, 0.9);
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 12px;
+            backdrop-filter: blur(10px);
+            line-height: 1.5;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            max-width: 280px;
+        }
+        .controls-header {
+            color: #60a5fa;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .control-item {
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            color: #cbd5e1;
+        }
+        .icon {
+            width: 16px;
+            text-align: center;
+            color: #60a5fa;
+        }
+        .btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .btn-secondary {
+            background: rgba(51, 65, 85, 0.8);
+            margin-top: 8px;
+        }
+        .slider-container {
+            margin: 15px 0;
+            padding: 12px;
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 8px;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: rgba(100, 116, 139, 0.3);
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #3b82f6;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #60a5fa;
+            transform: scale(1.1);
+        }
+        #mobile-warning {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(234, 179, 8, 0.9);
+            color: #78350f;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 12px;
+            display: none;
+            z-index: 50;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+        }
+        @media (max-width: 768px) {
+            #controls {
+                left: 50%;
+                transform: translateX(-50%);
+                bottom: 10px;
+                width: 90%;
+                max-width: 400px;
+            }
+            #mobile-warning {
+                display: block;
+                top: 10px;
+                width: 90%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="mobile-warning">
+        📱 移动设备：双指缩放/旋转，单指拖拽查看
+    </div>
+
+    <div id="loading">
+        <div class="spinner"></div>
+        <div style="font-size: 16px; margin-bottom: 8px; color: #f8fafc;">🚀 加载模型中...</div>
+        <div id="progress" style="font-size: 14px; color: #60a5fa; margin-bottom: 12px;">0%</div>
+        <div style="font-size: 11px; color: #94a3b8;">模型较大时可能需要较长时间</div>
+        <div id="loading-details" style="font-size: 10px; color: #64748b; margin-top: 8px;"></div>
+    </div>
+
+    <div id="controls">
+        <div class="controls-header">
+            <span>🎮 控制面板</span>
+        </div>
+
+        <div class="control-item">
+            <span class="icon">👆</span>
+            <span>单指拖拽：旋转视角</span>
+        </div>
+        <div class="control-item">
+            <span class="icon">✌️</span>
+            <span>双指缩放/旋转</span>
+        </div>
+        <div class="control-item">
+            <span class="icon">👆</span>
+            <span>双指拖拽：平移视图</span>
+        </div>
+
+        <div class="slider-container">
+            <div class="slider-label">
+                <span>模型缩放:</span>
+                <span id="zoom-value">1.0x</span>
+            </div>
+            <input type="range" id="zoom-slider" min="0.001" max="1" step="0.001" value="0.001">
+        </div>
+
+        <button class="btn" onclick="toggleAutoRotate()">
+            <span id="rotate-icon">🔄</span>
+            自动旋转: <span id="rotate-status">关</span>
+        </button>
+        <button class="btn btn-secondary" onclick="resetView()">
+            <span>🎯</span>
+            重置视角
+        </button>
+        <button class="btn btn-secondary" onclick="toggleGrid()">
+            <span>#️⃣</span>
+            显示网格: <span id="grid-status">关</span>
+        </button>
+    </div>
+
+    <!-- Three.js 库 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.min.js"></script>
+
+    <script>
+        // 全局变量
+        let scene, camera, renderer, controls, model;
+        let container = document.getElementById('canvas-container');
+        let loading = document.getElementById('loading');
+        let progress = document.getElementById('progress');
+        let loadingDetails = document.getElementById('loading-details');
+        let zoomSlider = document.getElementById('zoom-slider');
+        let zoomValue = document.getElementById('zoom-value');
+        let autoRotate = false;
+        let rotateStatus = document.getElementById('rotate-status');
+        let rotateIcon = document.getElementById('rotate-icon');
+        let gridStatus = document.getElementById('grid-status');
+        let gridVisible = false;
+        let gridHelper;
+
+        // 检测移动设备
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        // 初始化场景
+        function init() {
+            // 1. 创建场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a1a);
+
+            // 添加环境光
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+            // 2. 创建相机 - 使用更大的视野角度
+            camera = new THREE.PerspectiveCamera(
+                75, // 更大的视野角度
+                window.innerWidth / window.innerHeight,
+                0.1, // 安全的近裁剪平面
+                100000 // 更大的远裁剪平面
+            );
+
+            // 初始相机位置 - 设置得更远
+            camera.position.set(0, 0, 10000);
+
+            // 3. 创建渲染器
+            renderer = new THREE.WebGLRenderer({
+                antialias: true,
+                alpha: true,
+                powerPreference: "high-performance",
+                precision: 'highp'
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.outputEncoding = THREE.sRGBEncoding;
+
+            container.appendChild(renderer.domElement);
+
+            // 4. 添加光源
+            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight1.position.set(10000, 20000, 10000);
+            scene.add(directionalLight1);
+
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight2.position.set(-10000, 10000, -10000);
+            scene.add(directionalLight2);
+
+            // 5. 添加轨道控制器
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // 为大型模型设置更大的范围
+            controls.minDistance = 1;
+            controls.maxDistance = 50000; // 更大的最大距离
+            controls.maxPolarAngle = Math.PI;
+
+            // 移动设备优化
+            if (isMobile) {
+                controls.enableZoom = true;
+                controls.enablePan = true;
+                controls.enableRotate = true;
+                controls.touches = {
+                    ONE: THREE.TOUCH.ROTATE,
+                    TWO: THREE.TOUCH.DOLLY_PAN
+                };
+                controls.rotateSpeed = 0.5;
+                controls.panSpeed = 1;
+                controls.zoomSpeed = 0.5;
+            }
+
+            controls.target.set(0, 0, 0);
+            controls.update();
+
+            // 双击聚焦模型
+            renderer.domElement.addEventListener('dblclick', focusOnModel);
+
+            // 6. 添加网格地面 - 使用更大的网格
+            addGrid();
+
+            // 7. 缩放控制
+            zoomSlider.addEventListener('input', function() {
+                const value = parseFloat(this.value);
+                zoomValue.textContent = value.toFixed(3) + 'x';
+                if (model) {
+                    model.scale.set(value, value, value);
+                }
+            });
+
+            // 8. 处理窗口大小变化
+            window.addEventListener('resize', onWindowResize);
+
+            // 9. 开始动画循环
+            animate();
+
+            // 10. 加载模型
+            setTimeout(loadModel, 100);
+        }
+
+        // 添加网格地面 - 为大型模型使用更大的网格
+        function addGrid() {
+            gridHelper = new THREE.GridHelper(100000, 100, 0x444444, 0x222222);
+            gridHelper.visible = gridVisible;
+            scene.add(gridHelper);
+        }
+
+        // 切换网格显示
+        function toggleGrid() {
+            gridVisible = !gridVisible;
+            gridHelper.visible = gridVisible;
+            gridStatus.textContent = gridVisible ? '开' : '关';
+            gridStatus.style.color = gridVisible ? '#10b981' : '#ffffff';
+        }
+
+        // 加载模型函数
+        function loadModel() {
+            if (typeof THREE.GLTFLoader === 'undefined') {
+                loading.innerHTML = `
+                    <div style="color: #ef4444; font-size: 16px; margin-bottom: 10px;">❌ 加载失败</div>
+                    <div style="margin-top: 10px; font-size: 12px;">Three.js 库加载失败，请刷新页面重试</div>
+                    <button class="btn" onclick="location.reload()" style="margin-top: 15px;">刷新页面</button>
+                `;
+                return;
+            }
+
+            const loader = new THREE.GLTFLoader();
+            const modelPath = '1.glb';
+
+            console.log('正在加载模型:', modelPath);
+            loadingDetails.textContent = '正在初始化加载器...';
+
+            loader.load(
+                modelPath,
+                function(gltf) {
+                    console.log('✅ 模型加载成功');
+                    model = gltf.scene;
+
+                    // 遍历模型所有材质
+                    model.traverse(function(child) {
+                        if (child.isMesh) {
+                            child.frustumCulled = false; // 防止视锥体剔除
+
+                            if (child.material) {
+                                if (Array.isArray(child.material)) {
+                                    child.material.forEach(mat => optimizeMaterial(mat));
+                                } else {
+                                    optimizeMaterial(child.material);
+                                }
+                            }
+                        }
+                    });
+
+                    // 将模型放在原点
+                    model.position.set(0, 0, 0);
+
+                    // 计算模型边界
+                    const box = new THREE.Box3().setFromObject(model);
+                    const size = box.getSize(new THREE.Vector3());
+                    const center = box.getCenter(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+
+                    console.log('模型原始尺寸:', size);
+                    console.log('最大维度:', maxDim);
+                    console.log('模型中心:', center);
+
+                    // 关键：对于大型模型，使用更小的缩放比例
+                    let scale = 1;
+                    if (maxDim > 0) {
+                        if (maxDim > 10000) {
+                            // 超大型模型：大幅缩小
+                            scale = 100 / maxDim; // 将模型缩小到100单位以内
+                        } else if (maxDim > 1000) {
+                            scale = 500 / maxDim; // 将模型缩小到500单位以内
+                        } else if (maxDim > 100) {
+                            scale = 50 / maxDim; // 将模型缩小到50单位以内
+                        } else if (maxDim < 0.1) {
+                            scale = 10 / maxDim; // 放大小模型
+                        } else {
+                            scale = 10 / maxDim; // 默认缩放
+                        }
+
+                        // 确保缩放范围合理
+                        scale = Math.max(0.0001, Math.min(100, scale));
+
+                        model.scale.setScalar(scale);
+                        console.log('应用缩放:', scale);
+                    }
+
+                    // 重新计算缩放后的边界
+                    const scaledBox = new THREE.Box3().setFromObject(model);
+                    const scaledSize = scaledBox.getSize(new THREE.Vector3());
+                    const scaledMaxDim = Math.max(scaledSize.x, scaledSize.y, scaledSize.z);
+                    const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+
+                    console.log('缩放后尺寸:', scaledSize);
+                    console.log('缩放后最大维度:', scaledMaxDim);
+                    console.log('缩放后中心:', scaledCenter);
+
+                    // 更新UI缩放显示
+                    zoomSlider.value = scale;
+                    zoomValue.textContent = scale.toFixed(4) + 'x';
+
+                    // 添加到场景
+                    scene.add(model);
+
+                    // 关键：设置相机位置 - 根据缩放后的模型尺寸
+                    if (scaledMaxDim > 0) {
+                        // 计算相机距离：让模型占满视野
+                        const distance = scaledMaxDim * 1.5; // 1.5倍距离
+
+                        // 设置相机在模型的前上方
+                        camera.position.set(
+                            scaledCenter.x + distance,
+                            scaledCenter.y + distance * 0.5,
+                            scaledCenter.z + distance
+                        );
+
+                        console.log('相机位置:', camera.position);
+                        console.log('相机距离模型中心:', camera.position.distanceTo(scaledCenter));
+                    } else {
+                        // 如果无法计算尺寸，使用预设的距离
+                        camera.position.set(0, 0, 1000);
+                    }
+
+                    camera.lookAt(scaledCenter);
+                    controls.target.set(scaledCenter.x, scaledCenter.y, scaledCenter.z);
+
+                    // 更新控制器限制
+                    controls.minDistance = scaledMaxDim * 0.1;
+                    controls.maxDistance = scaledMaxDim * 50;
+                    controls.update();
+
+                    // 显示加载完成
+                    loadingDetails.textContent = `模型尺寸: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`;
+
+                    // 隐藏加载提示
+                    setTimeout(() => {
+                        loading.style.opacity = '0';
+                        setTimeout(() => {
+                            loading.style.display = 'none';
+                        }, 300);
+
+                        // 自动缩放滑块到合适位置
+                        zoomSlider.value = scale;
+                        zoomValue.textContent = scale.toFixed(4) + 'x';
+
+                        // 如果没有看到模型，提示用户
+                        setTimeout(() => {
+                            if (!isModelVisible()) {
+                                console.log('模型可能不可见，尝试重置视角');
+                                resetView();
+                            }
+                        }, 1000);
+                    }, 800);
+
+                    console.log('✅ 模型加载完成');
+                },
+                function(xhr) {
+                    const percent = Math.floor((xhr.loaded / xhr.total) * 100);
+                    progress.textContent = percent + '%';
+
+                    if (xhr.total > 0) {
+                        const loadedMB = (xhr.loaded / (1024 * 1024)).toFixed(1);
+                        const totalMB = (xhr.total / (1024 * 1024)).toFixed(1);
+                        loadingDetails.textContent = `已加载 ${loadedMB}MB / ${totalMB}MB`;
+                    }
+
+                    if (percent === 100) {
+                        progress.textContent = '100% ✓';
+                        progress.style.color = '#10b981';
+                        loadingDetails.textContent = '正在处理模型数据...';
+                    }
+                },
+                function(error) {
+                    console.error('❌ 模型加载错误:', error);
+                    loading.innerHTML = `
+                        <div style="color: #ef4444; font-size: 16px; margin-bottom: 10px;">❌ 加载失败</div>
+                        <div style="margin-top: 10px; font-size: 12px;">${
+                            error.message || '请检查模型文件路径和格式'
+                        }</div>
+                        <div style="margin-top: 10px; font-size: 11px; color: #94a3b8;">支持格式: .glb, .gltf</div>
+                        <button class="btn" onclick="location.reload()" style="margin-top: 15px;">重新加载</button>
+                        <button class="btn btn-secondary" onclick="loadModel()" style="margin-top: 10px;">重试加载</button>
+                    `;
+                }
+            );
+        }
+
+        // 检查模型是否可见
+        function isModelVisible() {
+            if (!model || !camera) return false;
+
+            const box = new THREE.Box3().setFromObject(model);
+            const frustum = new THREE.Frustum();
+            frustum.setFromProjectionMatrix(
+                new THREE.Matrix4().multiplyMatrices(
+                    camera.projectionMatrix,
+                    camera.matrixWorldInverse
+                )
+            );
+
+            return frustum.intersectsBox(box);
+        }
+
+        // 优化材质
+        function optimizeMaterial(material) {
+            if (!material) return;
+
+            material.precision = 'highp';
+            material.depthWrite = true;
+            material.depthTest = true;
+            material.transparent = false;
+            material.opacity = 1.0;
+            material.side = THREE.FrontSide;
+        }
+
+        // 聚焦模型
+        function focusOnModel() {
+            if (!model) return;
+
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+
+            // 设置相机距离
+            const distance = maxDim * 1.2;
+
+            camera.position.set(
+                center.x + distance,
+                center.y + distance * 0.5,
+                center.z + distance
+            );
+
+            camera.lookAt(center.x, center.y, center.z);
+            controls.target.set(center.x, center.y, center.z);
+            controls.update();
+        }
+
+        // 重置视角
+        function resetView() {
+            if (!model) {
+                camera.position.set(0, 0, 1000);
+                camera.lookAt(0, 0, 0);
+                controls.target.set(0, 0, 0);
+            } else {
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+
+                // 计算合适的距离
+                const distance = Math.max(100, maxDim * 1.5);
+
+                camera.position.set(
+                    center.x + distance,
+                    center.y + distance * 0.3,
+                    center.z + distance
+                );
+
+                camera.lookAt(center);
+                controls.target.set(center.x, center.y, center.z);
+            }
+            controls.update();
+        }
+
+        // 切换自动旋转
+        function toggleAutoRotate() {
+            autoRotate = !autoRotate;
+            rotateStatus.textContent = autoRotate ? '开' : '关';
+            rotateStatus.style.color = autoRotate ? '#10b981' : '#ffffff';
+            rotateIcon.textContent = autoRotate ? '⏸️' : '🔄';
+            rotateIcon.style.animation = autoRotate ? 'spin 2s linear infinite' : 'none';
+        }
+
+        // 窗口大小变化处理
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 更新控制器
+            if (controls) {
+                controls.update();
+            }
+
+            // 自动旋转
+            if (model && autoRotate) {
+                model.rotation.y += 0.005;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // 页面加载完成后初始化
+        window.addEventListener('load', init);
+
+        // 防止触摸事件滚动页面
+        document.addEventListener('touchmove', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+            e.preventDefault();
+        }, { passive: false });
+    </script>
+</body>
+</html>
